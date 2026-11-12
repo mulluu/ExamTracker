@@ -50,16 +50,18 @@ public struct TaskImportDocument: Sendable {
             if let context {
                 task.prompt = analysis.lines[context].map(\.text).joined(separator: "\n") + "\n\n" + task.prompt
             }
+            let questionLines = analysis.lines[match.range].prefix { !TaskImport.isAnswerOrSolution($0.text) }
+            let hasInlineKey = questionLines.contains { TaskImport.hasInlineAnswerOrSolution($0.text) }
             if let pdf = analysis.pdf {
                 task.sourceFragments = try Self.fragments(for: match, context: context, in: analysis.lines, pdf: pdf, images: &images).nonEmpty
             } else if !images.isEmpty {
                 task.sourceFragments = try Self.fragments(for: match, context: context, in: analysis.lines, pdf: nil, images: &images).nonEmpty
             } else {
-                task.sourceFragments = match.range.flatMap { analysis.lines[$0].attachments }.nonEmpty
+                let split = hasInlineKey ? questionLines.startIndex : questionLines.endIndex
+                task.sourceFragments = analysis.lines[match.range.lowerBound..<split].flatMap(\.attachments).nonEmpty
+                task.reviewFragments = analysis.lines[split..<match.range.upperBound].flatMap(\.attachments).nonEmpty
             }
-            if hasPageImages && task.sourceFragments != nil {
-                let visibleLines = analysis.lines[match.range].prefix { !TaskImport.isAnswerOrSolution($0.text) }
-                let hasInlineKey = visibleLines.contains { TaskImport.hasInlineAnswerOrSolution($0.text) }
+            if task.sourceFragments != nil {
                 let hasContextKey = context.map { range in
                     analysis.lines[range].contains {
                         TaskImport.isAnswerOrSolution($0.text) || TaskImport.hasInlineAnswerOrSolution($0.text)
@@ -76,7 +78,9 @@ public struct TaskImportDocument: Sendable {
         switch source {
         case .text(let text, let attachments):
             var task = PracticeTask(topic: TaskImport.topicName(topic), kind: "Документ", prompt: text.cleaned)
+            task.updateDiagramFromCondition()
             task.sourceFragments = attachments.sorted { $0.key < $1.key }.flatMap(\.value).nonEmpty
+            task.sourceInQuestion = !TaskImport.containsAnswerMaterial(text)
             guard task.isValid else { throw TaskImportError.noText }
             return [task]
         case .pdf(let data, _):
@@ -86,19 +90,21 @@ public struct TaskImportDocument: Sendable {
                 guard let page = pdf.page(at: index), let image = PageRendering(page)?.image() else {
                     throw TaskImportError.unreadableFile
                 }
-                return try Self.pageTask(image: image, index: index, topic: topic)
+                return try Self.pageTask(image: image, index: index, topic: topic,
+                                         containsAnswers: TaskImport.containsAnswerMaterial(page.string ?? ""))
             }
         case .image(let data):
             guard let image = Self.image(from: data) else { throw TaskImportError.unreadableFile }
-            return [try Self.pageTask(image: image, index: 0, topic: topic)]
+            return [try Self.pageTask(image: image, index: 0, topic: topic, containsAnswers: false)]
         }
     }
 
-    private static func pageTask(image: CGImage, index: Int, topic: String) throws -> PracticeTask {
+    private static func pageTask(image: CGImage, index: Int, topic: String, containsAnswers: Bool) throws -> PracticeTask {
         guard let data = jpeg(image) else { throw TaskImportError.unreadableFile }
         var task = PracticeTask(topic: TaskImport.topicName(topic), kind: "Страница \(index + 1)",
                                 prompt: "Решите задания на приложенной странице.")
         task.sourceFragments = [data]
+        task.sourceInQuestion = !containsAnswers
         return task
     }
 
@@ -429,12 +435,12 @@ public struct TaskImportDocument: Sendable {
         }
     }
 
-    static func image(from data: Data) -> CGImage? {
+    static func image(from data: Data, maxPixelSize: Int = 2400) -> CGImage? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
         return CGImageSourceCreateThumbnailAtIndex(source, 0, [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: 2400
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
         ] as CFDictionary)
     }
 

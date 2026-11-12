@@ -30,6 +30,18 @@ struct ExamEditor: View {
         VStack(alignment: .leading, spacing: 16) {
             Text(exam == nil ? "Новый экзамен" : "Настройки экзамена").font(.title2.bold())
             Form {
+                if exam == nil {
+                    Menu("Выбрать экзамен", systemImage: "books.vertical") {
+                        Menu("ЕГЭ") {
+                            ForEach(ExamPreset.ege) { preset in
+                                Button(preset.name.replacingOccurrences(of: "ЕГЭ · ", with: "")) { apply(preset) }
+                            }
+                        }
+                        ForEach(ExamPreset.international) { preset in
+                            Button(preset.name) { apply(preset) }
+                        }
+                    }
+                }
                 TextField("Название", text: $name, prompt: Text("Например, ЕГЭ · Информатика"))
                 TextField("Максимум итоговых баллов", text: $maximum)
                 TextField("Максимум первичных баллов", text: $primaryMaximum, prompt: Text("Если есть отдельная шкала"))
@@ -61,6 +73,15 @@ struct ExamEditor: View {
         .onChange(of: name) {
             suggested = false
         }
+    }
+
+    private func apply(_ preset: ExamPreset) {
+        name = preset.name
+        maximum = String(preset.maximum)
+        target = String(preset.target)
+        primaryMaximum = ""
+        topics = preset.topics.joined(separator: "\n")
+        failure = nil
     }
 
     private func suggestTopics() {

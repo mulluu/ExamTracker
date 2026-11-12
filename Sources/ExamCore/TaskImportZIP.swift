@@ -34,16 +34,22 @@ enum TaskImportZIP {
         }
 
         static func find(in words: [Substring]) -> Self? {
-            if words.contains(where: { $0.hasPrefix("проф") || $0 == "profile" }) { return .profile }
-            if words.contains(where: { $0.hasPrefix("баз") || $0 == "basic" }) { return .basic }
+            if words.contains(where: { $0.hasPrefix("проф") || $0 == "мапроф" || $0 == "profile" }) { return .profile }
+            if words.contains(where: { $0.hasPrefix("баз") || $0 == "мабаз" || $0 == "basic" }) { return .basic }
             if words.contains(where: { $0.hasPrefix("письм") || $0 == "пч" || $0 == "written" }) { return .written }
             if words.contains(where: { $0.hasPrefix("устн") || $0 == "уст" || $0 == "уч" || $0 == "oral" }) { return .oral }
-            if words.contains(where: { $0 == "ая" || $0.hasPrefix("англ") || $0.hasPrefix("angl") }) {
+            if isForeignLanguage(words) {
                 if words.contains("п") || words.contains("p") { return .written }
                 if words.contains("у") || words.contains("u") { return .oral }
             }
             return nil
         }
+    }
+
+    private static func isForeignLanguage(_ words: [Substring]) -> Bool {
+        let short: Set<Substring> = ["ая", "ня", "фя", "ия", "кя", "english", "german", "french", "spanish", "chinese"]
+        let prefixes = ["англ", "angl", "немец", "француз", "испан", "китай"]
+        return words.contains { word in short.contains(word) || prefixes.contains { word.hasPrefix($0) } }
     }
 
     static func pdf(from file: URL, preferredSubject: String) throws -> (name: String, data: Data) {
@@ -68,7 +74,7 @@ enum TaskImportZIP {
             candidates = matching.isEmpty
                 ? candidates.filter { Part.find(in: words(in: $0)) != requested.opposite }
                 : matching
-        } else if subject.contains(where: { $0.hasPrefix("английск") || $0 == "english" }) {
+        } else if isForeignLanguage(subject) {
             let written = candidates.filter { Part.find(in: words(in: $0)) == .written }
             if !written.isEmpty { candidates = written }
         }

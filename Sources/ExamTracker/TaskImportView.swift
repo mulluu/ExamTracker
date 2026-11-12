@@ -23,6 +23,12 @@ struct TaskImportView: View {
         self.onImport = onImport
     }
 
+    private var prefersPages: Bool {
+        guard let document, document.hasPageImages,
+              let organization = OfficialSources.sources(for: exam).first?.organization else { return false }
+        return ["IELTS", "ETS", "College Board"].contains(organization)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             Form {
@@ -59,7 +65,9 @@ struct TaskImportView: View {
                         }
                     }
 
-                    Text("При импорте PDF и фото приложение сохраняет фрагменты оригинала с рисунками и таблицами.")
+                    Text(prefersPages
+                         ? "Начните со страниц нужного раздела. Так сохранятся общий текст, рисунки и таблицы. Страницы с ключами можно исключить."
+                         : "Для сложной вёрстки можно добавить страницы целиком. Выберите страницы с условиями.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
@@ -79,16 +87,25 @@ struct TaskImportView: View {
                 Button("Отмена", role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Spacer()
-                if let document {
+                if prefersPages {
+                    Button("Проверить задания") { preview(asPages: false) }
+                        .disabled(loading != nil)
+                    Button("Страницы целиком") { preview(asPages: true) }
+                        .buttonStyle(.borderedProminent)
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(loading != nil)
+                } else {
+                    if let document {
                     Button(document.hasPageImages ? "Страницы целиком" : "Документ целиком") {
                         preview(asPages: true)
                     }
                         .disabled(loading != nil)
+                    }
+                    Button("Проверить задания") { preview(asPages: false) }
+                        .buttonStyle(.borderedProminent)
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(document == nil || loading != nil)
                 }
-                Button("Проверить задания") { preview(asPages: false) }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(document == nil || loading != nil)
             }
             .padding(20)
         }

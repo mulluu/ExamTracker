@@ -184,14 +184,26 @@ public struct PracticeTask: Identifiable, Codable, Sendable {
     public var maximum: Double
     public var illustration: Data?
     public var sourceFragments: [Data]?
+    public var reviewFragments: [Data]?
     public var generatedIllustration: Bool?
     public var answerOrigin: PracticeAnswerOrigin?
     public var diagramDescription: String?
     public var diagramInQuestion: Bool?
+    public var diagramIsAutomatic: Bool?
     public var sourceInQuestion: Bool?
     public var illustrationInQuestion: Bool?
 
-    public var showsIllustrationInQuestion: Bool { illustrationInQuestion ?? (generatedIllustration != true) }
+    public var showsIllustrationInQuestion: Bool { illustration?.isEmpty == false }
+
+    public var showsSourceInQuestion: Bool {
+        guard sourceFragments?.isEmpty == false else { return false }
+        return sourceInQuestion ?? (!kind.hasPrefix("Страница ") && solution.cleaned.isEmpty)
+    }
+
+    public var showsDiagramInQuestion: Bool {
+        if diagramIsAutomatic == true, ProblemDiagram.requiresConstruction(prompt) { return false }
+        return diagramInQuestion == true
+    }
 
     public init(topic: String = "", kind: String = "", prompt: String = "", answer: String = "",
                 solution: String = "", maximum: Double = 1) {

@@ -21,6 +21,25 @@ struct TaskImportTests {
         #expect(tasks[0].grade(response: "19,9") == .incorrect)
     }
 
+    @Test func importBuildsDiagramsOnlyFromEnoughConditionData() throws {
+        let tasks = try TaskImport.tasks(in: """
+        1. Дана функция y = x² − 2x + 1. Найдите её значение при x = 2.
+        2. Дан треугольник ABC с вершинами A(0; 0), B(4; 0), C(0; 3). Найдите его площадь.
+        3. Постройте график функции f(x) = 2x + 1.
+        4. На рисунке изображён график функции. Найдите её нуль.
+        Решение: y = x + 3.
+        5. Найдите площадь прямоугольника со сторонами 4 см и 3 см.
+        """, selecting: [1, 2, 3, 4, 5], topic: "Математика")
+        #expect(tasks.map(\.diagramInQuestion) == [true, true, false, nil, true])
+        #expect(tasks[3].diagramDescription == nil)
+        let graph = try StudyDiagram.parse(#require(tasks[0].diagramDescription))
+        #expect(graph.paths.flatMap(\.points).contains { $0.x == 1 && $0.y == 0 })
+        let triangle = try StudyDiagram.parse(#require(tasks[1].diagramDescription))
+        #expect(triangle.paths.first?.points.map(\.label) == ["A", "B", "C"])
+        let rectangle = try StudyDiagram.parse(#require(tasks[4].diagramDescription))
+        #expect(rectangle.paths.first?.points.map(\.x) == [0, 4, 4, 0])
+    }
+
     @Test func parsesSelectedNumbersAndKeepsTheRequestedOrder() throws {
         let selection = try TaskImport.selectedNumbers("3, 1, 6–8, 7")
         #expect(selection == [3, 1, 6, 7, 8])
@@ -131,6 +150,42 @@ struct TaskImportTests {
 }
 
 extension TaskImportTests {
+    @Test func preservesTheOrderOfRepeatedNumbersAcrossSATModules() throws {
+        let document = """
+        Module 1
+        1. First reading question?
+        2. Second reading question?
+        Module 2
+        1. First math question?
+        2. Second math question?
+        """
+        let source = TaskImportDocument(source: .text(document, attachments: [:]))
+        let tasks = try source.tasks(topic: "SAT")
+        #expect(tasks.map(\.prompt) == [
+            "First reading question?", "Second reading question?",
+            "First math question?", "Second math question?"
+        ])
+    }
+
+    @Test func rejectsAmbiguousNumberedImportWhenKeysRepeatAcrossTOEFLModules() {
+        let document = """
+        Reading Section, Module 1
+        1. Select the best answer.
+        Reading Section, Module 1
+        Answer Key
+        1 A
+        Listening Section, Module 1
+        1. Select the best response.
+        Listening Section, Module 1
+        Answer Key
+        1 B
+        """
+        let source = TaskImportDocument(source: .text(document, attachments: [:]))
+        #expect(throws: TaskImportError.multipleAnswerSections) {
+            try source.tasks(topic: "TOEFL")
+        }
+    }
+
     @Test func preservesSignedAnswersInASeparateKey() throws {
         let document = """
         1. Запишите отрицательное число.

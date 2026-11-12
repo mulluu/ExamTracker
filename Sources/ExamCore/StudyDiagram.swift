@@ -1,14 +1,14 @@
 import Foundation
 
 public struct StudyDiagram: Sendable {
-    public enum Kind: Equatable, Sendable { case graph, geometry }
+    public enum Kind: Equatable, Sendable { case graph, geometry, trace }
 
     public struct Point: Equatable, Sendable {
         public let x: Double
         public let y: Double
         public let label: String?
 
-        fileprivate init(x: Double, y: Double, label: String? = nil) {
+        init(x: Double, y: Double, label: String? = nil) {
             self.x = x
             self.y = y
             self.label = label
@@ -40,6 +40,7 @@ public struct StudyDiagram: Sendable {
 
     public static func parse(_ text: String) throws -> StudyDiagram {
         let text = text.cleaned.replacingOccurrences(of: "−", with: "-")
+        if isImageTrace(text) { return try ImageDiagramTrace.parse(text) }
         guard !text.isEmpty, text.utf8.count <= 4096 else { throw StudyDiagramError.unsupportedInput }
         if let match = Self.formula.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
            let range = Range(match.range(at: 1), in: text) {
@@ -131,11 +132,18 @@ public struct StudyDiagram: Sendable {
 
 public enum StudyDiagramError: LocalizedError, Sendable {
     case unsupportedInput, invalidFormula, invalidGeometry, noVisibleGraph, unresolvedGraph
+    case unreadableImage, noImageContours, complexImageContours
 
     public var errorDescription: String? {
         switch self {
+        case .unreadableImage:
+            "Не удалось открыть изображение."
+        case .noImageContours:
+            "Контуры не найдены. Попробуйте крупный контрастный чертёж."
+        case .complexImageContours:
+            "Слишком много деталей. Обрежьте изображение до нужной фигуры."
         case .unsupportedInput:
-            "Введите одну формулу вида y = x² или задайте фигуру координатами."
+            "Введите формулу, координаты или условие с размерами, углами или свойствами фигуры."
         case .invalidFormula:
             "Формулу не удалось разобрать. Проверьте переменную x, знаки и скобки."
         case .invalidGeometry:

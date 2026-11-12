@@ -11,6 +11,7 @@ struct PracticeSessionView: View {
     @TrackerState private var isFinished = false
     @TrackerState private var confirmClose = false
     @TrackerState private var confirmFinish = false
+    @TrackerState private var expanded = false
     @TrackerState private var error: String?
 
     init(set: PracticeSet, onRecord: @escaping (Attempt) throws -> Void) {
@@ -21,28 +22,40 @@ struct PracticeSessionView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Divider()
-            HSplitView {
-                sidebar
-                    .frame(minWidth: 175, idealWidth: 204, maxWidth: 214)
-                if let selection {
-                    PracticeQuestionView(entry: $entries[selection], number: selection + 1, isFinished: isFinished)
-                        .id(selection)
-                        .frame(minWidth: 475, maxWidth: .infinity, maxHeight: .infinity)
-                } else if isFinished {
-                    summary
-                        .frame(minWidth: 475, maxWidth: .infinity, maxHeight: .infinity)
+        GeometryReader { proxy in
+            let compact = proxy.size.width < 720
+            VStack(spacing: 0) {
+                header(compact: compact)
+                Divider()
+                if compact {
+                    VStack(spacing: 0) {
+                        if !entries.isEmpty {
+                            Picker("Перейти к заданию", selection: $selection) {
+                                if isFinished { Text("Итог тренировки").tag(nil as Int?) }
+                                ForEach(entries.indices, id: \.self) { index in
+                                    Text("\(index + 1). \(entries[index].task.topic)").tag(Optional(index))
+                                }
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 8)
+                            Divider()
+                        }
+                        questionPane
+                    }
                 } else {
-                    ContentUnavailableView("Нет заданий", systemImage: "list.bullet.clipboard")
-                        .frame(minWidth: 475, maxWidth: .infinity, maxHeight: .infinity)
+                    HSplitView {
+                        sidebar
+                            .frame(minWidth: 160, idealWidth: 194, maxWidth: 214)
+                        questionPane
+                            .frame(minWidth: 440)
+                    }
                 }
+                Divider()
+                footer
             }
-            Divider()
-            footer
         }
-        .frame(minWidth: 740, idealWidth: 870, minHeight: 480, idealHeight: 620)
+        .frame(width: expanded ? 840 : 560)
+        .frame(minHeight: expanded ? 560 : 420, idealHeight: expanded ? 650 : 570)
         .tint(Color(nsColor: .controlAccentColor))
         .interactiveDismissDisabled(entries.contains(where: \.hasWork))
         .confirmationDialog("Закрыть тренировку?", isPresented: $confirmClose, titleVisibility: .visible) {
@@ -59,26 +72,52 @@ struct PracticeSessionView: View {
         }
     }
 
-    private var header: some View {
-        HStack(spacing: 24) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(set.title)
-                    .font(.title2.weight(.semibold))
-                    .lineLimit(2)
-                let answered = entries.filter(\.hasAnswer).count
-                Text("Заполнено \(answered) из \(entries.count)")
-                    .font(.subheadline)
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
-            if isFinished {
-                Label("Тренировка завершена", systemImage: "checkmark.circle")
-                    .foregroundStyle(.secondary)
+    @ViewBuilder
+    private var questionPane: some View {
+        Group {
+            if let selection {
+                PracticeQuestionView(entry: $entries[selection], number: selection + 1, isFinished: isFinished)
+                    .id(selection)
+            } else if isFinished {
+                summary
             } else {
-                PracticeTimerView()
-                    .frame(minWidth: 300, alignment: .trailing)
+                ContentUnavailableView("Нет заданий", systemImage: "list.bullet.clipboard")
             }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func header(compact: Bool) -> some View {
+        let layout = compact ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+                             : AnyLayout(HStackLayout(spacing: 18))
+        let resizeTitle = expanded ? "Свернуть окно решения" : "Расширить окно решения"
+        return HStack(alignment: .top, spacing: 12) {
+            layout {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(set.title)
+                        .font(.title2.weight(.semibold))
+                        .lineLimit(2)
+                    let answered = entries.filter(\.hasAnswer).count
+                    Text("Заполнено \(answered) из \(entries.count)")
+                        .font(.subheadline)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+                if !compact { Spacer(minLength: 0) }
+                if isFinished {
+                    Label("Тренировка завершена", systemImage: "checkmark.circle")
+                        .foregroundStyle(.secondary)
+                } else {
+                    PracticeTimerView()
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button(resizeTitle, systemImage: expanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right") {
+                expanded.toggle()
+            }
+            .labelStyle(.iconOnly)
+            .help(resizeTitle)
         }
         .padding(.horizontal, 22)
         .padding(.vertical, 14)
@@ -272,16 +311,10 @@ private struct PracticeQuestionView: View {
                         .font(.body)
                         .lineSpacing(4)
                         .textSelection(.enabled)
-                    if let description = entry.task.diagramDescription, isFinished || entry.task.diagramInQuestion == true {
-                        StudyDiagramView(description: description)
-                    }
-                    if isFinished || entry.task.showsIllustrationInQuestion {
-                        TaskIllustrationView(task: entry.task)
-                    }
-                    if isFinished || entry.task.sourceInQuestion == true {
-                        TaskSourceFragmentsView(task: entry.task, expanded: entry.task.kind.hasPrefix("Страница "))
-                    } else if entry.task.kind.hasPrefix("Страница "), entry.task.sourceFragments?.isEmpty == false {
-                        Text("Оригинал доступен в разборе. Если страница содержит только условие, её можно открыть для решения в редакторе набора.")
+                    media
+                    if !isFinished, !entry.task.showsSourceInQuestion,
+                       entry.task.kind.hasPrefix("Страница "), entry.task.sourceFragments?.isEmpty == false {
+                        Text("Эта страница откроется в разборе. Если на ней только условие, разрешите показ в редакторе набора.")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                     }
@@ -310,10 +343,29 @@ private struct PracticeQuestionView: View {
         }
     }
 
+    @ViewBuilder
+    private var media: some View {
+        let fragments = ((isFinished || entry.task.showsSourceInQuestion) ? entry.task.sourceFragments ?? [] : [])
+            + (isFinished ? entry.task.reviewFragments ?? [] : [])
+        let diagram = (isFinished || entry.task.showsDiagramInQuestion) ? entry.task.diagramDescription : nil
+        if entry.task.showsIllustrationInQuestion || !fragments.isEmpty || diagram != nil {
+            DisclosureGroup("Изображения к заданию", isExpanded: $entry.showsImages) {
+                VStack(alignment: .leading, spacing: 12) {
+                    TaskIllustrationView(task: entry.task)
+                    TaskSourceImages(fragments: fragments)
+                    if let diagram { StudyDiagramView(description: diagram) }
+                }
+                .padding(.top, 8)
+            }
+        }
+    }
+
     private var heading: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        let taskTitle = "Задание \(number)"
+        let hasTopic = !entry.task.topic.cleaned.isEmpty && entry.task.topic != "Без темы"
+        return VStack(alignment: .leading, spacing: 5) {
             HStack {
-                Text("Задание \(number)")
+                Text(taskTitle)
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -321,10 +373,12 @@ private struct PracticeQuestionView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
-            Text(entry.task.topic)
-                .font(.title.bold())
-                .accessibilityAddTraits(.isHeader)
-            if !entry.task.kind.cleaned.isEmpty, entry.task.kind != entry.task.topic {
+            if hasTopic {
+                Text(entry.task.topic)
+                    .font(.title.bold())
+                    .accessibilityAddTraits(.isHeader)
+            }
+            if !entry.task.kind.cleaned.isEmpty, entry.task.kind != entry.task.topic, entry.task.kind != "№\(number)" {
                 Text(entry.task.kind)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -336,7 +390,7 @@ private struct PracticeQuestionView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Ваш ответ").font(.headline)
             TextField("Ваш ответ", text: $entry.response, prompt: Text("Введите ответ"), axis: .vertical)
-                .lineLimit(1...3)
+                .lineLimit(1...6)
                 .textFieldStyle(.roundedBorder)
         }
     }
@@ -404,6 +458,7 @@ private struct PracticeEntry {
     var note = ""
     var grade: PracticeGrade?
     var showsManual = false
+    var showsImages = true
 
     var answerLabel: String {
         switch task.answerOrigin {

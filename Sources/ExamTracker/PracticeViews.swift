@@ -14,6 +14,7 @@ struct PracticeView: View {
         case importFile(URL?)
         case official
         case generate
+        case diagrams
         case solve(PracticeSet)
 
         var id: String {
@@ -22,6 +23,7 @@ struct PracticeView: View {
             case .importFile(let url): "import-\(url?.absoluteString ?? "local")"
             case .official: "official"
             case .generate: "generate"
+            case .diagrams: "diagrams"
             case .solve(let set): "solve-\(set.id)"
             }
         }
@@ -29,7 +31,11 @@ struct PracticeView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Тренировочные наборы").font(.title2.weight(.semibold))
+            HStack {
+                Text("Тренировочные наборы").font(.title2.weight(.semibold))
+                Spacer()
+                Button("Графики и фигуры", systemImage: "chart.xyaxis.line") { sheet = .diagrams }
+            }
             HStack {
                 Button("Официальные варианты", systemImage: "building.columns") { sheet = .official }
                     .buttonStyle(.borderedProminent)
@@ -98,6 +104,10 @@ struct PracticeView: View {
                 .frame(width: 620)
             case .generate:
                 PracticeGenerator(exam: exam, ai: ai, onSave: onSaveSet)
+            case .diagrams:
+                StudyDiagramWorkspace { task in
+                    self.sheet = .edit(PracticeSet(title: "Графики и фигуры", tasks: [task]))
+                }
             case .solve(let set):
                 PracticeSessionView(set: set, onRecord: onRecord)
             }
@@ -185,6 +195,11 @@ private struct PracticeEditor: View {
                         TextField("Условие", text: binding.prompt, axis: .vertical)
                             .lineLimit(2...7)
                             .onChange(of: task.prompt) {
+                                if binding.wrappedValue.diagramIsAutomatic == true {
+                                    binding.wrappedValue.diagramDescription = nil
+                                    binding.wrappedValue.diagramInQuestion = nil
+                                    binding.wrappedValue.diagramIsAutomatic = nil
+                                }
                                 suggestions.removeValue(forKey: task.id)
                                 attemptedSolutions.remove(task.id)
                                 if binding.wrappedValue.answerOrigin != nil {
@@ -216,13 +231,15 @@ private struct PracticeEditor: View {
                         TaskSourceFragmentsView(task: task, expanded: imported)
                         if task.sourceFragments?.isEmpty == false {
                             Toggle("Показывать оригинал в условии", isOn: Binding(
-                                get: { binding.wrappedValue.sourceInQuestion == true },
+                                get: { binding.wrappedValue.showsSourceInQuestion },
                                 set: { binding.wrappedValue.sourceInQuestion = $0 }
                             ))
                             .help("Включите, если на фрагменте только условие и иллюстрации к нему.")
                         }
                         TaskIllustrationEditor(task: binding, ai: ai)
-                        StudyDiagramEditor(description: binding.diagramDescription, inQuestion: binding.diagramInQuestion)
+                        StudyDiagramEditor(description: binding.diagramDescription, inQuestion: binding.diagramInQuestion,
+                                           isAutomatic: binding.diagramIsAutomatic, condition: task.prompt,
+                                           fragments: task.sourceFragments ?? [], illustration: task.illustration)
                         TextField("Максимум баллов", value: binding.maximum, format: .number)
                         if draft.tasks.count > 1 {
                             Button("Удалить задание", role: .destructive) {
@@ -240,6 +257,9 @@ private struct PracticeEditor: View {
                                 disabled: isWorking || draft.title.cleaned.isEmpty || draft.tasks.isEmpty || !draft.tasks.allSatisfy(\.isValid)) {
                 var set = draft
                 set.title = set.title.cleaned
+                for index in set.tasks.indices where set.tasks[index].diagramDescription == nil {
+                    set.tasks[index].updateDiagramFromCondition()
+                }
                 do {
                     try onSave(set)
                     dismiss()
@@ -339,6 +359,7 @@ private struct PracticeGenerator: View {
     @TrackerState private var kind = ""
     @TrackerState private var sample = ""
     @TrackerState private var count = 3
+    @TrackerState private var preferDiagrams = false
     @TrackerState private var generated: PracticeSet?
     @TrackerState private var job: Task<Void, Never>?
     @TrackerState private var error: String?
@@ -369,6 +390,7 @@ private struct PracticeGenerator: View {
                         TextField("Тип задания", text: $kind, prompt: Text("Укажите один тип, чтобы получить его варианты"))
                         TextField("Условие образца", text: $sample, prompt: Text("Необязательно"), axis: .vertical)
                             .lineLimit(2...7)
+                        Toggle("Задания с графиками и фигурами", isOn: $preferDiagrams)
                         Stepper("Количество заданий — \(count)", value: $count, in: 1...12)
                         if job != nil {
                             ProgressView("Модель составляет задания…")
@@ -388,7 +410,7 @@ private struct PracticeGenerator: View {
     }
 
     private var hasPrompt: Bool {
-        [topics, kind, sample].contains { !$0.cleaned.isEmpty }
+        preferDiagrams || [topics, kind, sample].contains { !$0.cleaned.isEmpty }
     }
 
     private func generate() {
@@ -398,7 +420,7 @@ private struct PracticeGenerator: View {
             do {
                 let tasks = try await ai.client().generate(
                     exam: exam.name, topics: topics.cleaned, kind: kind.cleaned, count: count,
-                    sample: sample.cleaned
+                    sample: sample.cleaned, preferDiagrams: preferDiagrams
                 )
                 try Task.checkCancellation()
                 let label = kind.cleaned.isEmpty ? topics.cleaned : kind.cleaned

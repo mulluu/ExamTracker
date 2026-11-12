@@ -1,7 +1,16 @@
+import Foundation
 import Testing
 @testable import ExamCore
 
 struct StudyDiagramTests {
+    @Test(arguments: ["Выполните построение графика функции y = 2x + 1.",
+                      "Построй график функции y = 2x + 1.",
+                      "Construct the graph of the function y = 2x + 1."])
+    func keepsAlternativeConstructionInstructionsInReview(_ condition: String) throws {
+        let diagram = try #require(ProblemDiagram.fromCondition(condition))
+        #expect(!diagram.showsDuringPractice)
+    }
+
     @Test func plotsAnExplicitFormulaWithSuperscriptsAndImplicitMultiplication() throws {
         let diagram = try StudyDiagram.parse("Постройте график функции у = х² − 2х + 1.")
         #expect(diagram.kind == .graph)
@@ -80,6 +89,87 @@ struct StudyDiagramTests {
         #expect(path.points.map(\.x) == [0, 4, 4, 0])
         #expect(path.points.map(\.y) == [0, 0, 3, 3])
         #expect((path.points[1].x - path.points[0].x) * (path.points[2].y - path.points[1].y) == 12)
+    }
+
+    @Test(arguments: ["Найдите x, при y = 3.", "Даны y = x и y = -x.",
+                      "Дана функция y = x² при x ≥ 0.", "Найдите x. Ответ: y = x.",
+                      "Дан треугольник с основанием 4 и высотой 3.",
+                      "Найдите площадь прямоугольника со сторонами 4 см и 3 м."])
+    func skipsIncompleteOrAmbiguousProblemData(condition: String) {
+        #expect(ProblemDiagram.fromCondition(condition) == nil)
+    }
+
+    @Test func buildsIsoscelesTriangleUsingTheAngleInTheCondition() throws {
+        let condition = """
+        В треугольнике АВС угол А равен 53°, сто-
+        роны AC и BC равны. Найдите угол C.
+        """
+        let result = try #require(ProblemDiagram.fromCondition(condition))
+        let triangle = try #require(result.drawing.paths.first { $0.isClosed })
+        #expect(triangle.points.map(\.label) == ["A", "B", "C"])
+        let a = triangle.points[0], b = triangle.points[1], c = triangle.points[2]
+        #expect(abs(hypot(c.x - a.x, c.y - a.y) - hypot(c.x - b.x, c.y - b.y)) < 1e-7)
+        #expect(abs(atan2(c.y - a.y, c.x - a.x) * 180 / .pi - 53) < 1e-6)
+        #expect(result.showsDuringPractice)
+    }
+
+    @Test func buildsExternalRayFromAnExplicitlyNamedExteriorAngle() throws {
+        let result = try #require(ProblemDiagram.fromCondition(
+            "В треугольнике ABC стороны AC и BC равны, угол C равен 154°, угол CBD внешний. Найдите угол CBD."
+        ))
+        let points = Dictionary(uniqueKeysWithValues: result.drawing.points.compactMap { point in
+            point.label.map { ($0, point) }
+        })
+        let a = try #require(points["A"]), b = try #require(points["B"]), d = try #require(points["D"])
+        #expect(a.y == b.y && b.y == d.y)
+        #expect(a.x < b.x && b.x < d.x)
+        #expect(result.drawing.paths.contains { $0.points.map(\.label) == ["B", "D"] })
+    }
+
+    @Test func buildsMedianAndBisectorOfRightTriangleFromItsCondition() throws {
+        let result = try #require(ProblemDiagram.fromCondition(
+            "Острый угол B прямоугольного треугольника ABC равен 19°. Найдите угол между биссектрисой CD и медианой CM, проведёнными из вершины прямого угла C."
+        ))
+        let points = Dictionary(uniqueKeysWithValues: result.drawing.points.compactMap { point in
+            point.label.map { ($0, point) }
+        })
+        let a = try #require(points["A"]), b = try #require(points["B"])
+        let m = try #require(points["M"]), d = try #require(points["D"])
+        #expect(abs(m.x - (a.x + b.x) / 2) < 1e-7)
+        #expect(abs(m.y - (a.y + b.y) / 2) < 1e-7)
+        #expect(abs(d.x - d.y) < 1e-7)
+        #expect(result.drawing.paths.contains { $0.points.map(\.label) == ["C", "D"] })
+        #expect(result.drawing.paths.contains { $0.points.map(\.label) == ["C", "M"] })
+    }
+
+    @Test func reconstructsTriangleFromNamedSideLengthsInProse() throws {
+        let result = try #require(ProblemDiagram.fromCondition(
+            "Дан треугольник ABC со сторонами BC = 4, AC = 5 и AB = 3. Найдите площадь."
+        ))
+        let points = try #require(result.drawing.paths.first?.points)
+        #expect(points.map(\.label) == ["A", "B", "C"])
+        func distance(_ a: StudyDiagram.Point, _ b: StudyDiagram.Point) -> Double {
+            hypot(a.x - b.x, a.y - b.y)
+        }
+        #expect(abs(distance(points[0], points[1]) - 3) < 1e-7)
+        #expect(abs(distance(points[1], points[2]) - 4) < 1e-7)
+        #expect(abs(distance(points[0], points[2]) - 5) < 1e-7)
+    }
+
+    @Test func keepsManualOverridesAndLetsAutomaticDiagramsFollowConditions() throws {
+        var task = PracticeTask(prompt: "Дана функция y = x + 1. Найдите её значение при x = 2.")
+        task.updateDiagramFromCondition()
+        #expect(task.diagramIsAutomatic == true)
+        task.prompt = "Постройте график функции y = 2x + 1."
+        task.updateDiagramFromCondition()
+        #expect(task.diagramInQuestion == false)
+        task.diagramDescription = "y = x²"
+        task.diagramIsAutomatic = false
+        task.updateDiagramFromCondition()
+        #expect(task.diagramDescription == "y = x²")
+        task.diagramDescription = nil
+        task.updateDiagramFromCondition()
+        #expect(task.diagramDescription == nil)
     }
 
     @Test(arguments: ["y = x^2 и y = x", "y = x + z", "y = x/2x", "y = 1/0", "y = x +",

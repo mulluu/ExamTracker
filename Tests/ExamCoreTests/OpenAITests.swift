@@ -11,6 +11,16 @@ struct OpenAITests {
         #expect(tasks.first?.kind == "№6")
     }
 
+    @Test func buildsDiagramsFromGeneratedConditionsWithoutAnImageRequest() async throws {
+        let client = ExamAI(openAIModel: "gpt-6-luna", apiKey: "test-diagram-generation", session: stubSession())
+        let tasks = try await client.generate(exam: "Математика", topics: "Графики", kind: "", count: 2,
+                                             sample: "", preferDiagrams: true)
+        #expect(tasks[0].diagramInQuestion == true)
+        let drawing = try StudyDiagram.parse(#require(tasks[0].diagramDescription))
+        #expect(drawing.paths.flatMap(\.points).contains { $0.x == 2 && $0.y == 5 })
+        #expect(tasks[1].diagramDescription == nil)
+    }
+
     @Test func explainsTopicFromMessageAfterReasoningItem() async throws {
         let client = ExamAI(openAIModel: "gpt-6-luna", apiKey: "test-explanation", session: stubSession())
         let attempt = try Attempt(title: "Пробник", scores: [
@@ -160,6 +170,10 @@ private final class OpenAIStub: URLProtocol, @unchecked Sendable {
             #expect(items["additionalProperties"] as? Bool == false)
             #expect(input.contains("№6"))
             text = #"{"tasks":[{"topic":"Алгебра","kind":"№6","prompt":"Решите x = 2","answer":"2","solution":"x уже выражен","maximum":1}]}"#
+        case "Bearer test-diagram-generation":
+            #expect(input.contains("проиллюстрировать графиком"))
+            #expect(body["text"] != nil)
+            text = #"{"tasks":[{"topic":"Графики","kind":"","prompt":"Дана функция y = 2x + 1. Найдите её значение при x = 2.","answer":"5","solution":"2 × 2 + 1 = 5","maximum":1},{"topic":"Алгебра","kind":"","prompt":"Найдите значение x.","answer":"2","solution":"Подстановка даёт y = x + 3.","maximum":1}]}"#
         case "Bearer test-explanation":
             #expect(body["text"] == nil)
             #expect(input.contains("x = 7"))

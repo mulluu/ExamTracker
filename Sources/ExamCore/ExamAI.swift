@@ -49,7 +49,7 @@ public struct ExamAI: Sendable {
     }
 
     public func generate(exam: String, topics: String, kind: String, count: Int,
-                         sample: String) async throws -> [PracticeTask] {
+                         sample: String, preferDiagrams: Bool = false) async throws -> [PracticeTask] {
         guard (1...12).contains(count) else { throw ExamError.invalidGeneration }
         struct Generated: Decodable {
             struct Task: Decodable {
@@ -63,9 +63,17 @@ public struct ExamAI: Sendable {
             let tasks: [Task]
         }
         let input = try JSONEncoder().encode(["exam": exam, "topics": topics, "kind": kind, "sample": sample])
+        let diagramInstructions = preferDiagrams ? """
+        Составь задания, которые можно проиллюстрировать графиком или плоской фигурой.
+        В каждом условии запиши в отдельной строке формулу вида y = x² − 2x + 1, координаты
+        вершин фигуры или параметры окружности или прямоугольника. Числа и обозначения
+        схемы должны следовать из условия. Готовый ответ пиши только в поле answer.
+        """ : ""
         let text = try await complete("""
         Создай ровно \(count) разных учебных заданий на русском. Это авторские тренировочные задания.
-        Дай полные условия без ссылок и рисунков, ответ, короткое пошаговое решение и максимум баллов.
+        Все данные для решения запиши в условии. Дай краткий ответ, пошаговое решение
+        и максимум баллов. Внешние ссылки не используй.
+        \(diagramInstructions)
         Если kind задан, сделай все задания этого типа и верни этот же текст в поле kind каждого задания. Если есть образец, используй его структуру,
         меняя данные и формулировки. Самостоятельно проверь, что каждый ответ следует из условия.
         \(String(decoding: input, as: UTF8.self))
@@ -77,9 +85,11 @@ public struct ExamAI: Sendable {
             throw ExamError.server("Модель вернула задания с другими типами. Повторите запрос или уточните тип.")
         }
         let tasks = generated.tasks.map {
-            PracticeTask(topic: $0.topic.cleaned, kind: $0.kind.cleaned,
-                         prompt: $0.prompt.cleaned, answer: $0.answer.cleaned,
-                         solution: $0.solution.cleaned, maximum: $0.maximum)
+            var task = PracticeTask(topic: $0.topic.cleaned, kind: $0.kind.cleaned,
+                                    prompt: $0.prompt.cleaned, answer: $0.answer.cleaned,
+                                    solution: $0.solution.cleaned, maximum: $0.maximum)
+            task.updateDiagramFromCondition()
+            return task
         }
         try PracticeSet.validateGenerated(tasks, count: count)
         return tasks

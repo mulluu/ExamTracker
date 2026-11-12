@@ -46,11 +46,40 @@ struct TaskImportZIPTests {
     }
 
     @Test func includesDirectZIPsForSupportedFIPISubjects() {
-        for subject in ["Профильная математика", "Русский язык", "Информатика", "Английский язык"] {
-            let sources = OfficialSources.sources(for: Exam(name: "ЕГЭ · \(subject)"))
+        #expect(ExamPreset.ege.count == 16)
+        for preset in ExamPreset.ege {
+            let sources = OfficialSources.sources(for: Exam(name: preset.name))
             let archives = sources.filter(\.isArchive)
             #expect(archives.count == 2)
             #expect(archives.allSatisfy { $0.url.host == "doc.fipi.ru" && $0.url.pathExtension == "zip" })
+        }
+    }
+
+    @Test func includesPrintableOfficialMaterialsForInternationalPresets() {
+        #expect(ExamPreset.international.map(\.maximum) == [9, 9, 6, 1600])
+        for preset in ExamPreset.international {
+            let sources = OfficialSources.sources(for: Exam(name: preset.name))
+            #expect(sources.contains { $0.isPDF && $0.url.pathExtension == "pdf" })
+        }
+    }
+
+    @Test func selectsTheWrittenPartOfAChineseOpenVariant() throws {
+        try withZIP([
+            "Китайский п 2026.pdf": "written",
+            "Китайский у 2026.pdf": "oral",
+            "Скрипт Китайский 2026.pdf": "transcript"
+        ]) { file in
+            let written = try TaskImportZIP.pdf(from: file, preferredSubject: "ЕГЭ · Китайский язык")
+            #expect(written.data == Data("%PDF-1.4\nwritten".utf8))
+            let oral = try TaskImportZIP.pdf(from: file, preferredSubject: "ЕГЭ · Китайский язык · Устная часть")
+            #expect(oral.data == Data("%PDF-1.4\noral".utf8))
+        }
+    }
+
+    @Test func selectsBasicMathFromTheCompactOpenVariantFilename() throws {
+        try withZIP(["МАпроф.pdf": "profile", "МАбаз.pdf": "basic"]) { file in
+            let result = try TaskImportZIP.pdf(from: file, preferredSubject: "ЕГЭ · Базовая математика")
+            #expect(result.data == Data("%PDF-1.4\nbasic".utf8))
         }
     }
 

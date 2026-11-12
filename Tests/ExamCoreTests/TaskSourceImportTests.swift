@@ -22,6 +22,21 @@ struct TaskSourceImportTests {
         #expect(containsBlue(fragments[0]))
     }
 
+    @Test func buildsGraphOnPDFImportAndKeepsTheOriginalFragment() throws {
+        let url = try makePDF(width: 600, text: [
+            ("1. Дана функция y = 2x + 1.", 50, 700),
+            ("Найдите её значение при x = 2.", 50, 665),
+            ("2. Найдите угол.", 50, 470)
+        ], graphic: CGRect(x: 65, y: 510, width: 130, height: 100))
+        defer { try? FileManager.default.removeItem(at: url) }
+        let document = try TaskImport.readDocument(url)
+        let task = try #require(try document.tasks(selecting: [1], topic: "Функции").first)
+        let diagram = try StudyDiagram.parse(#require(task.diagramDescription))
+        #expect(task.diagramInQuestion == true)
+        #expect(task.sourceFragments?.isEmpty == false)
+        #expect(diagram.paths.flatMap(\.points).contains { $0.x == 2 && $0.y == 5 })
+    }
+
     @Test func importsTwoColumnInformaticsWithoutMergingQuestions() throws {
         let url = try makePDF(width: 1000, text: [
             ("1", 40, 700), ("2", 540, 700),
@@ -60,7 +75,43 @@ struct TaskSourceImportTests {
         let doc = try TaskImport.readDocument(url)
         let pages = try doc.pageTasks(topic: "Reading")
         #expect(pages.first?.kind == "Страница 1")
+        #expect(pages.first?.sourceInQuestion == true)
         #expect(containsBlue(try #require(pages.first?.sourceFragments?.first)))
+    }
+
+    @Test func showsTextDocumentAttachmentsThatBelongToTheQuestion() throws {
+        let document = TaskImportDocument(source: .text("1. What does the diagram show?\n\u{FFFC}", attachments: [1: [Data([1])]]))
+        let task = try #require(try document.tasks(topic: "Reading").first)
+        #expect(task.sourceFragments == [Data([1])])
+        #expect(task.sourceInQuestion == true)
+    }
+
+    @Test func retainsTheQuestionImageWhenTheSameDocumentHasASolutionImage() throws {
+        let document = TaskImportDocument(
+            source: .text("1. Use the diagram.\n\u{FFFC}\nSolution: use a line.\n\u{FFFC}",
+                          attachments: [1: [Data([1])], 3: [Data([2])]]))
+        let task = try #require(try document.tasks(topic: "Math").first)
+        #expect(task.showsSourceInQuestion)
+        #expect(task.sourceFragments == [Data([1])])
+        #expect(task.reviewFragments == [Data([2])])
+    }
+
+    @Test(arguments: ["Answer Key", "Reading Sample (Answers)", "Система оценивания экзаменационной работы"])
+    func reservesAnswerPagesForReview(heading: String) throws {
+        let url = try makePDF(width: 600, text: [(heading, 50, 700), ("1. B", 50, 620)],
+                              graphic: CGRect(x: 90, y: 420, width: 130, height: 90))
+        defer { try? FileManager.default.removeItem(at: url) }
+        let task = try #require(try TaskImport.readDocument(url).pageTasks(topic: "Reading").first)
+        #expect(!task.showsSourceInQuestion)
+        #expect(task.sourceFragments?.count == 1)
+    }
+
+    @Test func showsAttachedIllustrationsFromOlderVersionsDuringPractice() {
+        var task = PracticeTask(prompt: "Study the figure.")
+        task.illustration = Data([1])
+        task.generatedIllustration = true
+        task.illustrationInQuestion = false
+        #expect(task.showsIllustrationInQuestion)
     }
 
     @Test func keepsImagesWithInlineAnswerForReview() throws {
@@ -82,6 +133,7 @@ struct TaskSourceImportTests {
         let document = try TaskImport.readDocument(url)
         #expect(document.hasPageImages)
         #expect(try document.pageTasks(topic: "Математика").first?.sourceFragments?.count == 1)
+        #expect(try document.pageTasks(topic: "Математика").first?.sourceInQuestion == true)
     }
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["EXAMTRACKER_TEST_VISION"] == "1",

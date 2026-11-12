@@ -58,7 +58,7 @@ public enum OfficialSources {
         }
 
         if words.contains("ielts") {
-            return [ieltsSource(for: words)]
+            return ieltsSources(for: words)
         }
 
         if words.contains("toefl"), words.isDisjoint(with: ["itp", "essentials", "junior", "primary", "pbt"]) {
@@ -66,7 +66,7 @@ public enum OfficialSources {
                 OfficialSource("ETS", "Подготовка к TOEFL iBT",
                                "https://www.ets.org/toefl/test-takers/ibt/prepare.html"),
                 OfficialSource("ETS", "TOEFL iBT Practice Test 1 для печати",
-                               "https://www.ets.org/content/dam/ets-org/pdfs/toefl/toefl-ibt-full-length-practice-test-1.pdf", isPDF: true)
+                               "https://www.ets.org/pdfs/toefl/toefl-ibt-teachers-resources-practice-test-1.pdf", isPDF: true)
             ]
         }
 
@@ -83,39 +83,53 @@ public enum OfficialSources {
     }
 
     private static func fipiDownloads(for words: Set<Substring>) -> [OfficialSource] {
-        let files: (open: String, demo: String)
-        if words.contains(where: { $0.hasPrefix("математ") || $0.hasPrefix("профмат") || $0 == "math" }) {
-            files = ("Mat_1_ege2026.zip", "ma_11_2027.zip")
-        } else if words.contains(where: { $0.hasPrefix("русск") || $0 == "russian" }) {
-            files = ("Rus_1_ege2026.zip", "ru_11_2027.zip")
-        } else if words.contains(where: { $0.hasPrefix("информат") || $0 == "informatics" }) {
-            files = ("Inf_1_ege2026.zip", "inf_11_2027.zip")
-        } else if words.contains(where: { $0.hasPrefix("английск") || $0 == "english" }) {
-            files = ("Angl_1_ege2026.zip", "aya_11_2027.zip")
-        } else {
-            return []
-        }
+        let subjects: [(prefixes: [String], open: String, demo: String)] = [
+            (["математ", "профмат", "math"], "Mat", "ma"),
+            (["русск", "russian"], "Rus", "ru"),
+            (["информат", "informatics"], "Inf", "inf"),
+            (["физик", "physics"], "Fiz", "fi"),
+            (["хими", "chemistry"], "Him", "hi"),
+            (["биологи", "biology"], "Bio", "bi"),
+            (["истори", "history"], "Ist", "is"),
+            (["географ", "geography"], "Geo", "gg"),
+            (["обществознан", "social"], "Ob", "ob"),
+            (["литератур", "literature"], "Lit", "li"),
+            (["английск", "english"], "Angl", "aya"),
+            (["немец", "german"], "Nem", "nya"),
+            (["француз", "french"], "Fran", "fya"),
+            (["испан", "spanish"], "Isp", "iya"),
+            (["китай", "chinese"], "Kit", "kya")
+        ]
+        guard let subject = subjects.first(where: { entry in
+            words.contains { word in entry.prefixes.contains { word.hasPrefix($0) } }
+        }) else { return [] }
         return [
             OfficialSource("ФИПИ", "Проект демоверсии ЕГЭ 2027",
-                           "https://doc.fipi.ru/ege/demoversii-specifikacii-kodifikatory/2027/" + files.demo),
+                           "https://doc.fipi.ru/ege/demoversii-specifikacii-kodifikatory/2027/\(subject.demo)_11_2027.zip"),
             OfficialSource("ФИПИ", "Открытый вариант ЕГЭ 2026",
-                           "https://doc.fipi.ru/ege/otkrytyy-bank-zadaniy-ege/otkrytyye-varianty-kim-ege/2026/" + files.open)
+                           "https://doc.fipi.ru/ege/otkrytyy-bank-zadaniy-ege/otkrytyye-varianty-kim-ege/2026/\(subject.open)_1_ege2026.zip")
         ]
     }
 
-    private static func ieltsSource(for words: Set<Substring>) -> OfficialSource {
+    private static func ieltsSources(for words: Set<Substring>) -> [OfficialSource] {
         let baseURL = "https://ielts.org/take-a-test/preparation-resources/sample-test-questions"
         if words.isSuperset(of: ["life", "skills"]) {
-            return OfficialSource("IELTS", "Примеры заданий IELTS for UKVI Life Skills",
-                                  baseURL + "/life-skills-sample-questions")
+            return [OfficialSource("IELTS", "Примеры заданий IELTS for UKVI Life Skills",
+                                   baseURL + "/life-skills-sample-questions")]
         }
+        let academic = OfficialSource("IELTS", "IELTS Academic Reading для печати",
+                                     "https://ielts.org/cdn/Sample-tests/ielts-academic-reading-sample-tasks-2023.pdf",
+                                     isPDF: true)
+        let general = OfficialSource("IELTS", "IELTS General Training Reading для печати",
+                                    "https://ielts.org/cdn/Sample-tests/ielts-general-reading-sample-tasks-2023.pdf",
+                                    isPDF: true)
         if words.contains("academic") {
-            return OfficialSource("IELTS", "Примеры заданий IELTS Academic", baseURL + "/academic-test")
+            return [academic, OfficialSource("IELTS", "Примеры заданий IELTS Academic", baseURL + "/academic-test")]
         }
         if words.contains("general") {
-            return OfficialSource("IELTS", "Примеры заданий IELTS General Training", baseURL + "/general-training-test")
+            return [general, OfficialSource("IELTS", "Примеры заданий IELTS General Training", baseURL + "/general-training-test")]
         }
-        return OfficialSource("IELTS", "Примеры заданий IELTS по формату экзамена", baseURL)
+        return [academic, general, OfficialSource("IELTS", "Примеры заданий IELTS по формату экзамена", baseURL)]
     }
 
     private static func cambridgeSource(for words: Set<Substring>) -> OfficialSource? {

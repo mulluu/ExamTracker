@@ -9,11 +9,7 @@ struct TaskIllustrationView: View {
     var body: some View {
         if let data = task.illustration, let image = NSImage(data: data) {
             VStack(alignment: .leading, spacing: 6) {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: 500, maxHeight: 260)
-                    .accessibilityLabel("Иллюстрация к заданию")
+                TaskImagePreview(image: image, label: "Иллюстрация к заданию")
                 if task.generatedIllustration == true {
                     Text("Иллюстрация ИИ. Обозначения и пропорции могут отличаться от условия.")
                         .font(.caption)
@@ -34,12 +30,6 @@ struct TaskIllustrationEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             TaskIllustrationView(task: task)
-            if task.illustration != nil {
-                Toggle("Показывать иллюстрацию в условии", isOn: Binding(
-                    get: { task.showsIllustrationInQuestion },
-                    set: { task.illustrationInQuestion = $0 }
-                ))
-            }
             HStack {
                 Button("Прикрепить изображение", systemImage: "photo") { picker = true }
                 if ai.canGenerateImages {
@@ -102,7 +92,7 @@ struct TaskIllustrationEditor: View {
         }
     }
 
-    private nonisolated static func thumbnail(from url: URL) throws -> Data {
+    nonisolated static func thumbnail(from url: URL) throws -> Data {
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
@@ -125,7 +115,6 @@ struct TaskIllustrationEditor: View {
 struct TaskSourceFragmentsView: View {
     let task: PracticeTask
     @TrackerState private var expanded: Bool
-    @TrackerState private var selectedImage: SourceImage?
 
     init(task: PracticeTask, expanded: Bool) {
         self.task = task
@@ -135,44 +124,63 @@ struct TaskSourceFragmentsView: View {
     var body: some View {
         if let fragments = task.sourceFragments, !fragments.isEmpty {
             DisclosureGroup("Оригинал из файла", isExpanded: $expanded) {
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(fragments.indices, id: \.self) { index in
-                        if let image = NSImage(data: fragments[index]) {
-                            Button {
-                                selectedImage = SourceImage(id: index, image: image)
-                            } label: {
-                                Image(nsImage: image)
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(maxWidth: 520, maxHeight: 260)
-                            }
-                            .buttonStyle(.plain)
-                            .help("Увеличить фрагмент оригинала")
-                            .accessibilityLabel("Увеличить фрагмент \(index + 1)")
-                        }
-                    }
-                }
-                .padding(.vertical, 6)
-            }
-            .sheet(item: $selectedImage) { source in
-                VStack(alignment: .trailing, spacing: 12) {
-                    ScrollView([.vertical, .horizontal]) {
-                        Image(nsImage: source.image)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 740)
-                            .accessibilityLabel("Фрагмент оригинала")
-                    }
-                    Button("Закрыть") { selectedImage = nil }.keyboardShortcut(.cancelAction)
-                }
-                .padding(16)
-                .frame(width: 800, height: 650)
+                TaskSourceImages(fragments: fragments)
+                    .padding(.vertical, 6)
             }
         }
     }
+}
 
-    private struct SourceImage: Identifiable {
-        let id: Int
-        let image: NSImage
+struct TaskSourceImages: View {
+    let fragments: [Data]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(fragments.indices, id: \.self) { index in
+                if let image = NSImage(data: fragments[index]) {
+                    TaskImagePreview(image: image, label: "Фрагмент оригинала \(index + 1)")
+                } else {
+                    Label("Фрагмент не удалось открыть", systemImage: "photo.badge.exclamationmark")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+}
+
+private struct TaskImagePreview: View {
+    let image: NSImage
+    let label: String
+    @TrackerState private var enlarged = false
+
+    var body: some View {
+        Button {
+            enlarged = true
+        } label: {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: .infinity, maxHeight: 360, alignment: .leading)
+                .accessibilityHidden(true)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Увеличить: \(label)")
+        .help("Нажмите, чтобы увеличить")
+        .sheet(isPresented: $enlarged) {
+            VStack(alignment: .trailing, spacing: 12) {
+                GeometryReader { proxy in
+                    ScrollView(.vertical) {
+                        Image(nsImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: proxy.size.width)
+                            .accessibilityLabel(label)
+                    }
+                }
+                Button("Закрыть") { enlarged = false }.keyboardShortcut(.cancelAction)
+            }
+            .padding(16)
+            .frame(minWidth: 320, idealWidth: 620, minHeight: 280, idealHeight: 460)
+        }
     }
 }

@@ -12,6 +12,7 @@ public enum TaskImportError: LocalizedError, Equatable {
     case lockedPDF
     case noText
     case noNumberedTasks
+    case multipleAnswerSections
     case recognitionFailed
     case unavailablePages(pageCount: Int)
     case unresolved(missing: [Int], repeated: [Int])
@@ -32,6 +33,8 @@ public enum TaskImportError: LocalizedError, Equatable {
             "Текст не найден. Проверьте, что текст на странице или снимке читается."
         case .noNumberedTasks:
             "Номера заданий не найдены. Можно добавить выбранные страницы целиком."
+        case .multipleAnswerSections:
+            "В файле несколько разделов с ключами. Укажите страницы одного раздела или выберите «Страницы целиком»."
         case .recognitionFailed:
             "macOS не удалось распознать текст на изображении. Попробуйте PDF с текстовым слоем или TXT."
         case .unavailablePages(let pageCount):
@@ -92,6 +95,9 @@ public enum TaskImport {
     static func matches(in rawLines: [String], selecting numbers: [Int], topic: String,
                         allowBareNumbers: Bool, bareHeadingLines: Set<Int>? = nil) throws -> [Match] {
         let lines = rawLines.map { $0.replacingOccurrences(of: "\u{FFFC}", with: "").cleaned }
+        guard lines.lazy.filter({ match(englishKeyHeading, $0) != nil }).prefix(2).count < 2 else {
+            throw TaskImportError.multipleAnswerSections
+        }
         let keyIndex = lines.firstIndex { match(answerHeading, $0) != nil || match(evaluationHeading, $0) != nil }
         let questions = lines.prefix(keyIndex ?? lines.count)
         let key: [Int: Set<String>] = keyIndex.map { index in
@@ -149,13 +155,14 @@ public enum TaskImport {
                                         answer: fields.answer.isEmpty ? keyAnswer ?? "" : fields.answer,
                                         solution: fields.solution)
                 if answers.isEmpty { task.fillMissingAnswerLocally() }
+                task.updateDiagramFromCondition()
                 results.append(Match(task: task, range: body.range))
             }
         }
         guard missing.isEmpty && repeated.isEmpty else {
             throw TaskImportError.unresolved(missing: missing, repeated: repeated)
         }
-        return results
+        return numbers.isEmpty ? results.sorted { $0.range.lowerBound < $1.range.lowerBound } : results
     }
 
     static func topicName(_ topic: String) -> String {
@@ -170,6 +177,18 @@ public enum TaskImport {
         let text = line.cleaned
         return fieldLabel.firstMatch(in: text, range: NSRange(text.startIndex..., in: text))
             .map { $0.range.location > 0 } ?? false
+    }
+
+    static func containsAnswerMaterial(_ text: String) -> Bool {
+        text.components(separatedBy: .newlines).contains { raw in
+            let line = raw.cleaned
+            if match(answerHeading, line) != nil || match(evaluationHeading, line) != nil
+                || match(englishKeyHeading, line) != nil { return true }
+            guard let label = fieldLabel.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
+                  let range = Range(label.range, in: line) else { return false }
+            let value = String(line[range.upperBound...]).cleaned
+            return !value.isEmpty && !isAnswerPlaceholder(value)
+        }
     }
 
     static func startsQuestion(_ line: String) -> Bool {
@@ -249,6 +268,7 @@ public enum TaskImport {
     private static let looseHeader = regex(#"^([0-9]+)(?:[.)](?![0-9])\h*|:\h*|\h+[-–—]\h+)(.*)$"#)
     private static let keyRow = regex(#"^(?:[№#]\h*)?([0-9]+)(?:\h*(?:[):]|\.(?![0-9]))\h*|\h*[-–—]\h+|\h+)(.*)$"#)
     private static let answerHeading = regex(#"^(?:краткие\h+ответы|ответы(?:\h+(?:к\h+заданиям|на\h+задания))?|answer\h+key|answers)(?:\h*:\h*(.*)|\h*\.?)$"#)
+    private static let englishKeyHeading = regex(#"(?:^(?:answer\h+key|answers)\h*:?$|\(\h*answers\h*\)\h*$)"#)
     private static let evaluationHeading = regex(#"^система\h+оценивания\h+экзаменационной\h+работы\b"#)
     private static let evaluationRow = regex(#"^([1-9][0-9]{0,2})\h+([\p{L}0-9−-]+(?:[\h;,.]+[0-9−-]+)*)$"#)
     private static let pageMarker = regex(#"^(?:continue|stop|(?:[0-9]+\h+)*module(?:\h+[0-9]+)*)$"#)
@@ -326,7 +346,7 @@ public enum TaskImport {
         for (offset, heading) in headings.enumerated() {
             let end = offset + 1 < headings.count ? headings[offset + 1].line : lines.endIndex
             let content = [heading.content] + ((heading.line + 1)..<end).compactMap { index in
-                excluded.contains(index) ? nil : lines[index]
+                excluded.contains(index) || match(pageMarker, lines[index]) != nil ? nil : lines[index]
             }
             result[heading.number, default: []].append(Body(text: content, range: heading.line..<end))
         }
