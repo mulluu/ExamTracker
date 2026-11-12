@@ -5,7 +5,7 @@ struct PracticeView: View {
     let exam: Exam
     let ai: AIConfiguration
     let onSaveSet: (PracticeSet) throws -> Void
-    let onRecord: (Attempt) throws -> Void
+    let onSolve: (PracticeSet) -> Void
 
     @TrackerState private var sheet: Sheet?
 
@@ -15,7 +15,6 @@ struct PracticeView: View {
         case official
         case generate
         case diagrams
-        case solve(PracticeSet)
 
         var id: String {
             switch self {
@@ -24,7 +23,6 @@ struct PracticeView: View {
             case .official: "official"
             case .generate: "generate"
             case .diagrams: "diagrams"
-            case .solve(let set): "solve-\(set.id)"
             }
         }
     }
@@ -80,7 +78,7 @@ struct PracticeView: View {
                             .accessibilityLabel("Официальный источник")
                     }
                     Button("Изменить") { sheet = .edit(set) }
-                    Button("Решать", systemImage: "arrow.right") { sheet = .solve(set) }
+                    Button("Решать", systemImage: "arrow.right") { onSolve(set) }
                         .buttonStyle(.borderedProminent)
                 }
                 .padding(16)
@@ -108,8 +106,6 @@ struct PracticeView: View {
                 StudyDiagramWorkspace { task in
                     self.sheet = .edit(PracticeSet(title: "Графики и фигуры", tasks: [task]))
                 }
-            case .solve(let set):
-                PracticeSessionView(set: set, onRecord: onRecord)
             }
         }
     }

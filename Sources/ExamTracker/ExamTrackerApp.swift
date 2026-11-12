@@ -12,10 +12,10 @@ struct ExamTrackerApp: App {
     var body: some Scene {
         Window("Экзамены", id: "tracker") {
             TrackerView(store: store)
-                .frame(minWidth: 880, minHeight: 610)
                 .tint(.mint)
         }
         .defaultSize(width: 1120, height: 760)
+        .windowResizability(.contentMinSize)
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified)
     }
@@ -110,12 +110,27 @@ struct TrackerView: View {
     @TrackerState private var sheet: TrackerSheet?
     @TrackerState private var pendingRemoval: Attempt?
     @TrackerState private var failure: String?
+    @TrackerState private var activePractice: (examID: UUID, set: PracticeSet)?
 
     private var selectedExam: Exam? {
         store.exams.first { $0.id == selectedID } ?? store.exams.first
     }
 
     var body: some View {
+        if let activePractice {
+            PracticeSessionView(set: activePractice.set, onRecord: { attempt in
+                try record(attempt, for: activePractice.examID)
+            }, onClose: {
+                self.activePractice = nil
+            })
+            .frame(minWidth: 560, minHeight: 430)
+        } else {
+            examBrowser
+                .frame(minWidth: 880, minHeight: 610)
+        }
+    }
+
+    private var examBrowser: some View {
         NavigationSplitView {
             sidebar
                 .navigationSplitViewColumnWidth(min: 220, ideal: 245, max: 300)
@@ -266,7 +281,7 @@ struct TrackerView: View {
                                 }
                             }
                         }
-                    }, onRecord: { try record($0, for: exam.id) })
+                    }, onSolve: { set in activePractice = (exam.id, set) })
                 case .lessons:
                     LessonsView(exam: exam, ai: ai, showSettings: { sheet = .settings }) { lesson in
                         try store.update(exam.id) { updated in

@@ -4,19 +4,19 @@ import SwiftUI
 struct PracticeSessionView: View {
     let set: PracticeSet
     let onRecord: (Attempt) throws -> Void
+    let onClose: () -> Void
 
-    @Environment(\.dismiss) private var dismiss
     @TrackerState private var entries: [PracticeEntry]
     @TrackerState private var selection: Int?
     @TrackerState private var isFinished = false
     @TrackerState private var confirmClose = false
     @TrackerState private var confirmFinish = false
-    @TrackerState private var expanded = false
     @TrackerState private var error: String?
 
-    init(set: PracticeSet, onRecord: @escaping (Attempt) throws -> Void) {
+    init(set: PracticeSet, onRecord: @escaping (Attempt) throws -> Void, onClose: @escaping () -> Void) {
         self.set = set
         self.onRecord = onRecord
+        self.onClose = onClose
         _entries = TrackerState(initialValue: set.tasks.map { PracticeEntry(task: $0) })
         _selection = TrackerState(initialValue: set.tasks.isEmpty ? nil : 0)
     }
@@ -54,12 +54,9 @@ struct PracticeSessionView: View {
                 footer
             }
         }
-        .frame(width: expanded ? 840 : 560)
-        .frame(minHeight: expanded ? 560 : 420, idealHeight: expanded ? 650 : 570)
         .tint(Color(nsColor: .controlAccentColor))
-        .interactiveDismissDisabled(entries.contains(where: \.hasWork))
         .confirmationDialog("Закрыть тренировку?", isPresented: $confirmClose, titleVisibility: .visible) {
-            Button("Закрыть без записи", role: .destructive) { dismiss() }
+            Button("Закрыть без записи", role: .destructive, action: onClose)
             Button("Продолжить тренировку", role: .cancel) {}
         } message: {
             Text("Введённые ответы и баллы будут удалены.")
@@ -90,35 +87,26 @@ struct PracticeSessionView: View {
     private func header(compact: Bool) -> some View {
         let layout = compact ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
                              : AnyLayout(HStackLayout(spacing: 18))
-        let resizeTitle = expanded ? "Свернуть окно решения" : "Расширить окно решения"
-        return HStack(alignment: .top, spacing: 12) {
-            layout {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(set.title)
-                        .font(.title2.weight(.semibold))
-                        .lineLimit(2)
-                    let answered = entries.filter(\.hasAnswer).count
-                    Text("Заполнено \(answered) из \(entries.count)")
-                        .font(.subheadline)
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                }
-                if !compact { Spacer(minLength: 0) }
-                if isFinished {
-                    Label("Тренировка завершена", systemImage: "checkmark.circle")
-                        .foregroundStyle(.secondary)
-                } else {
-                    PracticeTimerView()
-                }
+        return layout {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(set.title)
+                    .font(.title2.weight(.semibold))
+                    .lineLimit(2)
+                let answered = entries.filter(\.hasAnswer).count
+                Text("Заполнено \(answered) из \(entries.count)")
+                    .font(.subheadline)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            Button(resizeTitle, systemImage: expanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right") {
-                expanded.toggle()
+            if !compact { Spacer(minLength: 0) }
+            if isFinished {
+                Label("Тренировка завершена", systemImage: "checkmark.circle")
+                    .foregroundStyle(.secondary)
+            } else {
+                PracticeTimerView()
             }
-            .labelStyle(.iconOnly)
-            .help(resizeTitle)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 22)
         .padding(.vertical, 14)
     }
@@ -240,9 +228,9 @@ struct PracticeSessionView: View {
                     .foregroundStyle(.red)
             }
             HStack(spacing: 10) {
-                Button("Закрыть", role: .cancel) {
+                Button("К тренировкам", systemImage: "chevron.backward") {
                     if entries.contains(where: \.hasWork) { confirmClose = true }
-                    else { dismiss() }
+                    else { onClose() }
                 }
                 .keyboardShortcut(.cancelAction)
                 if let selection {
@@ -290,7 +278,7 @@ struct PracticeSessionView: View {
         guard !scores.isEmpty, entries.allSatisfy(\.hasValidScore) else { return }
         do {
             try onRecord(Attempt(title: set.title, scores: scores))
-            dismiss()
+            onClose()
         } catch {
             self.error = error.localizedDescription
         }
