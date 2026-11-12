@@ -1,0 +1,19 @@
+.build/
+.swiftpm/
+dist/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+.DS_Store
+*.app/
+*.xcarchive/
+*.dmg
+*.zip
+
+# Local configuration, credentials, and exam history.
+.env
+.env.*
+*.key
+*.pem
+*.p12
+exams.json
