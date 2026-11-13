@@ -2,6 +2,12 @@
 
 Приложение для macOS, чтобы решать пробники и отслеживать результаты. Поддерживает все предметы ЕГЭ, IELTS Academic и General Training, TOEFL iBT, SAT и свои экзамены. На данный момент поддерживается только Русский язык
 
+## Возможности
+
+![Прогресс подготовки](docs/images/examtracker-progress.jpg)
+
+![Решение задания](docs/images/examtracker-practice.jpg)
+
 ## Установка
 
 Скачайте `ExamTracker-mac.zip` в [GitHub Releases](https://github.com/mulluu/ExamTracker/releases), распакуйте архив и перенесите `ExamTracker.app` в «Программы». Для готовой сборки нужен Mac с Apple Silicon и macOS 14 или новее. Сборка подписана локально. Инструкции по открытию приложения есть в [справке Apple](https://support.apple.com/ru-ru/102445).
